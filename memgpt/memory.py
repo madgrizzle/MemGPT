@@ -178,7 +178,7 @@ class CoreMemory(object):
                                 print(f"{min_dist}, {selected}, {new_human[subsection][x]}")
                         if selected is not None and min_dist < 0.05:
                             if new_content is None or new_content == "" or new_content == "\n":
-                                del new_humand[subsection][selected]
+                                del new_human[subsection][selected]
                             else:
                                 new_human[subsection][selected] = new_content
                             return self.edit_human(new_human)
