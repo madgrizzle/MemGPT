@@ -3,6 +3,8 @@ from typing import List
 
 import requests
 import tiktoken
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
 
 import memgpt.local_llm.llm_chat_completion_wrappers.airoboros as airoboros
 import memgpt.local_llm.llm_chat_completion_wrappers.chatml as chatml
@@ -75,7 +77,12 @@ def load_grammar_file(grammar):
 # TODO: support tokenizers/tokenizer apis available in local models
 def count_tokens(s: str, model: str = "gpt-4") -> int:
     encoding = tiktoken.encoding_for_model(model)
-    return len(encoding.encode(s))
+    tokenizer = Tokenizer.from_file("/home/john/gits/text-generation-webui/models/starsnatched_MemGPT-DPO-MoE-exl2/tokenizer.json")
+    tok_len = len(tokenizer.encode(s))
+    tik_len = len(encoding.encode(s))
+    print(f"---------{tok_len} vs {tik_len}-------")
+    return(tok_len)
+    #return len(encoding.encode(s))
 
 
 def num_tokens_from_functions(functions: List[dict], model: str = "gpt-4"):

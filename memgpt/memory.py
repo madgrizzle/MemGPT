@@ -1,11 +1,13 @@
 import datetime
 import uuid
+import json
+import copy
 from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple, Union
 
 from memgpt.constants import MESSAGE_SUMMARY_REQUEST_ACK, MESSAGE_SUMMARY_WARNING_FRAC
 from memgpt.data_types import AgentState, Message, Passage
-from memgpt.embeddings import embedding_model, parse_and_chunk_text, query_embedding
+from memgpt.embeddings import embedding_model, parse_and_chunk_text, query_embedding, get_l2_distance
 from memgpt.llm_api.llm_api_tools import create
 from memgpt.prompts.gpt_summarize import SYSTEM as SUMMARY_PROMPT_SYSTEM
 from memgpt.utils import (
@@ -28,26 +30,52 @@ class CoreMemory(object):
     and any other baseline data you deem necessary for the AI's basic functioning.
     """
 
-    def __init__(self, persona=None, human=None, persona_char_limit=None, human_char_limit=None, archival_memory_exists=True):
+    def __init__(self, persona=None, human=None, persona_char_limit=None, human_char_limit=None, archival_memory_exists=True, agent_state=None):
+        self.agent_state = agent_state
         self.persona = persona
         self.human = human
         self.persona_char_limit = persona_char_limit
         self.human_char_limit = human_char_limit
+        if self.human == "" or self.human == None:
+            self.human = {}
+        else:
+            self.human = json.loads(self.human)
+        print(f"0) self.human={self.human} of type {type(self.human)}")
 
         # affects the error message the AI will see on overflow inserts
         self.archival_memory_exists = archival_memory_exists
+        
+        self.top_k = 100
+        self.agent_state = agent_state
+
+        # create embedding model
+        self.embed_model = embedding_model(agent_state.embedding_config)
+        self.embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
+        assert self.embedding_chunk_size, f"Must set {agent_state.embedding_config.embedding_chunk_size}"
+
 
     def __repr__(self) -> str:
         return f"\n### CORE MEMORY ###" + f"\n=== Persona ===\n{self.persona}" + f"\n\n=== Human ===\n{self.human}"
 
     def to_dict(self):
+        print(f"-2) self.human={self.human} of type {type(self.human)}")
         return {
             "persona": self.persona,
-            "human": self.human,
+            "human": json.dumps(self.human),
         }
+    
+    def human_to_string(self):
+        string = ""
+        for subsection in self.human:
+            string = string + "\n" + subsection + ":"
+            for memory in self.human[subsection]:
+                #string = string + "\n" + "  " + memory[0]
+                string = string + "\n" + "  " + memory
+        return(string)
 
     @classmethod
     def load(cls, state):
+        print(f"-1) self.human={self.human} of type {type(self.human)}")
         return cls(state["persona"], state["human"])
 
     def edit_persona(self, new_persona):
@@ -66,8 +94,14 @@ class CoreMemory(object):
             if self.archival_memory_exists:
                 error_msg = f"{error_msg} Consider summarizing existing core memories in 'human' and/or moving lower priority content to archival memory to free up space in core memory, then trying again."
             raise ValueError(error_msg)
-
-        self.human = new_human
+        
+        if new_human == "" or new_human == None or new_human==" ":
+            self.human = {}
+        else:
+            if isinstance(new_human, dict):
+                self.human = new_human
+            else:
+                self.human = json.loads(new_human)
         return len(self.human)
 
     def edit(self, field, content):
@@ -78,20 +112,36 @@ class CoreMemory(object):
         else:
             raise KeyError(f'No memory section named {field} (must be either "persona" or "human")')
 
-    def edit_append(self, field, content, sep="\n"):
+    def edit_append(self, field, content, subsection, sep=" | "):
+        #print(f"3) self.human={self.human} of type {type(self.human)}")
+        #print(f"--{field}, {content}, {subsection}--")
+        subsection = subsection.strip('-')
+        print("field={field}, new_content={new_content}, subsection={subsection}")        
         if field == "persona":
             new_content = self.persona + sep + content
             return self.edit_persona(new_content)
         elif field == "human":
-            new_content = self.human + sep + content
-            return self.edit_human(new_content)
+            if "\n" in content:
+                raise ValueError("Content contained a return making it very suspicious")
+            else:
+                new_human = copy.deepcopy(self.human)
+                #content_vec = query_embedding(self.embed_model, content)
+                if subsection not in new_human:
+                    print(subsection)
+                    #new_human[subsection] = [(content,content_vec)]
+                    new_human[subsection] = [content]                    
+                else:
+                    #new_human[subsection].append((content,content_vec))
+                    new_human[subsection].append(content)                    
+                return self.edit_human(new_human)
         else:
             raise KeyError(f'No memory section named {field} (must be either "persona" or "human")')
 
-    def edit_replace(self, field, old_content, new_content):
+    def edit_replace(self, field, old_content, new_content, subsection):
         if len(old_content) == 0:
-            raise ValueError("old_content cannot be an empty string (must specify old_content to replace)")
-
+            print("old_content cannot be an empty string (must specify old_content to replace). performing append")
+            print("field={field}, new_content={new_content}, subsection={subsection}")
+            return(self.edit_append(self, field, new_content, subsection))
         if field == "persona":
             if old_content in self.persona:
                 new_persona = self.persona.replace(old_content, new_content)
@@ -99,11 +149,44 @@ class CoreMemory(object):
             else:
                 raise ValueError("Content not found in persona (make sure to use exact string)")
         elif field == "human":
-            if old_content in self.human:
-                new_human = self.human.replace(old_content, new_content)
-                return self.edit_human(new_human)
+            subsection = subsection.strip('-')
+            if "\n" in new_content:
+                raise ValueError("Content contained a return making it very suspicious")
             else:
-                raise ValueError("Content not found in human (make sure to use exact string)")
+                if subsection in self.human:
+                    #content_vec = query_embedding(self.embed_model, new_content)                
+                    new_human = copy.deepcopy(self.human)
+                    if False:
+                        for x in range(len(self.human[subsection])):
+                            #if new_human[subsection][x][0] == old_content:
+                            if new_human[subsection][x] == old_content:
+                                #new_human[subsection][x] = (new_content,content_vec)
+                                new_human[subsection][x] = new_content
+                                return self.edit_human(new_human)
+                        #Do an embedding-based search
+                    else:
+                        old_content_vec = query_embedding(self.embed_model, old_content)
+                        min_dist = 100
+                        selected = None
+                        for x in range(len(new_human[subsection])):
+                            test_content_vec = query_embedding(self.embed_model, new_human[subsection][x])
+                            dist = get_l2_distance(self.embed_model, old_content_vec, test_content_vec)
+                            print(f"{new_human[subsection][x]} - {old_content} = {dist}")
+                            if dist < 0.05 and dist < min_dist:
+                                min_dist = dist
+                                selected = x
+                                print(f"{min_dist}, {selected}, {new_human[subsection][x]}")
+                        if selected is not None and min_dist < 0.05:
+                            if new_content is None or new_content == "" or new_content == "\n":
+                                del new_humand[subsection][selected]
+                            else:
+                                new_human[subsection][selected] = new_content
+                            return self.edit_human(new_human)
+                        else:
+                            raise ValueError("No match close enough.")
+                    raise ValueError("Content not found in human (make sure to use exact string)")
+                else:
+                    raise ValueError("Subsection not found in human (make sure to use exact string)")
         else:
             raise KeyError(f'No memory section named {field} (must be either "persona" or "human")')
 
@@ -451,8 +534,8 @@ class EmbeddingArchivalMemory(ArchivalMemory):
 
         try:
             if query_string not in self.cache:
-                # self.cache[query_string] = self.retriever.retrieve(query_string)
-                query_vec = query_embedding(self.embed_model, query_string)
+                # self.cache[query_string] = seuelf.retriever.retrieve(query_string)
+                qry_vec = query_embedding(self.embed_model, query_string)
                 self.cache[query_string] = self.storage.query(query_string, query_vec, top_k=self.top_k)
 
             start = int(start if start else 0)

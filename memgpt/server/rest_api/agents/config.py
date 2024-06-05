@@ -22,6 +22,8 @@ router = APIRouter()
 class AgentRenameRequest(BaseModel):
     agent_name: str = Field(..., description="New name for the agent.")
 
+class AgentPresetUpdateRequest(BaseModel):
+    agent_preset: str = Field(..., description="New preset for the agent.")
 
 class GetAgentResponse(BaseModel):
     # config: dict = Field(..., description="The agent configuration object.")
@@ -155,5 +157,52 @@ def setup_agents_config_router(server: SyncServer, interface: QueuingInterface, 
             raise
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"{e}")
+
+    @router.patch("/agents/{agent_id}/update_preset", tags=["agents"], response_model=GetAgentResponse)
+    def update_agent_preset(
+        agent_id: uuid.UUID,
+        request: AgentPresetUpdateRequest = Body(...),
+        user_id: uuid.UUID = Depends(get_current_user_with_server),
+    ):
+        """
+        Updates the name of a specific agent.
+
+        This changes the name of the agent in the database but does NOT edit the agent's persona.
+        """
+        # agent_id = uuid.UUID(request.agent_id) if request.agent_id else None
+
+        # TODO: Implement if needed.
+        #valid_preset = validate_agent_preset(request.agent_preset)
+        valid_preset = request.agent_preset
+
+        interface.clear()
+        try:
+            agent_state = server.update_agent_preset(user_id=user_id, agent_id=agent_id, new_agent_preset=valid_preset)
+            # get sources
+            attached_sources = server.list_attached_sources(agent_id=agent_id)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"{e}")
+        llm_config = LLMConfigModel(**vars(agent_state.llm_config))
+        embedding_config = EmbeddingConfigModel(**vars(agent_state.embedding_config))
+
+        return GetAgentResponse(
+            agent_state=AgentStateModel(
+                id=agent_state.id,
+                name=agent_state.name,
+                user_id=agent_state.user_id,
+                preset=agent_state.preset,
+                persona=agent_state.persona,
+                human=agent_state.human,
+                llm_config=llm_config,
+                embedding_config=embedding_config,
+                state=agent_state.state,
+                created_at=int(agent_state.created_at.timestamp()),
+                functions_schema=agent_state.state["functions"],  # TODO: this is very error prone, jsut lookup the preset instead
+            ),
+            last_run_at=None,  # TODO
+            sources=attached_sources,
+        )
 
     return router

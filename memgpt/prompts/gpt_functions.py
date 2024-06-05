@@ -61,6 +61,10 @@ FUNCTIONS_CHAINING = {
                     "type": "string",
                     "description": "Section of the memory to be edited (persona or human).",
                 },
+                "subsection": {
+                    "type": "string",
+                    "description": "Subsection of the memory to be edited.",
+                },                
                 "content": {
                     "type": "string",
                     "description": "Content to write to the memory. All unicode (including emojis) are supported.",
@@ -70,7 +74,7 @@ FUNCTIONS_CHAINING = {
                     "description": FUNCTION_PARAM_DESCRIPTION_REQ_HEARTBEAT,
                 },
             },
-            "required": ["name", "content", "request_heartbeat"],
+            "required": ["name", "content", "subsection", "request_heartbeat"],
         },
     },
     "core_memory_replace": {
@@ -83,6 +87,10 @@ FUNCTIONS_CHAINING = {
                     "type": "string",
                     "description": "Section of the memory to be edited (persona or human).",
                 },
+                "subsection": {
+                    "type": "string",
+                    "description": "Subsection of the memory to be edited.",
+                }, 
                 "old_content": {
                     "type": "string",
                     "description": "String to replace. Must be an exact match.",
@@ -96,7 +104,7 @@ FUNCTIONS_CHAINING = {
                     "description": FUNCTION_PARAM_DESCRIPTION_REQ_HEARTBEAT,
                 },
             },
-            "required": ["name", "old_content", "new_content", "request_heartbeat"],
+            "required": ["name", "subsection", "old_content", "new_content", "request_heartbeat"],
         },
     },
     "recall_memory_search": {

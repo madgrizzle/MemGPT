@@ -56,23 +56,26 @@ def pause_heartbeats(self: Agent, minutes: int) -> Optional[str]:
 pause_heartbeats.__doc__ = pause_heartbeats_docstring
 
 
-def core_memory_append(self: Agent, name: str, content: str) -> Optional[str]:
+def core_memory_append(self: Agent, name: str, content: str, subsection: str) -> Optional[str]:
     """
     Append to the contents of core memory.
 
     Args:
         name (str): Section of the memory to be edited (persona or human).
         content (str): Content to write to the memory. All unicode (including emojis) are supported.
-
+        subsection (str): Name of sub-section to store memory.  Use name of person speaking to.
+        
     Returns:
         Optional[str]: None is always returned as this function does not produce a response.
     """
-    self.memory.edit_append(name, content)
+    if subsection is None or subsection=="":
+        subsection = "None"
+    self.memory.edit_append(name, content, subsection)
     self.rebuild_memory()
     return None
 
 
-def core_memory_replace(self: Agent, name: str, old_content: str, new_content: str) -> Optional[str]:
+def core_memory_replace(self: Agent, name: str, old_content: str, new_content: str, subsection: str) -> Optional[str]:
     """
     Replace the contents of core memory. To delete memories, use an empty string for new_content.
 
@@ -80,11 +83,14 @@ def core_memory_replace(self: Agent, name: str, old_content: str, new_content: s
         name (str): Section of the memory to be edited (persona or human).
         old_content (str): String to replace. Must be an exact match.
         new_content (str): Content to write to the memory. All unicode (including emojis) are supported.
-
+        subsection (str): Name of sub-section to store memory.  Use name of person speaking to.
+        
     Returns:
         Optional[str]: None is always returned as this function does not produce a response.
     """
-    self.memory.edit_replace(name, old_content, new_content)
+    if subsection is None or subsection=="":
+        subsection = "None"
+    self.memory.edit_replace(name, old_content, new_content, subsection)
     self.rebuild_memory()
     return None
 

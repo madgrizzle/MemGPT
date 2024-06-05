@@ -97,6 +97,10 @@ class AbstractClient(object):
     def rename_agent(self, agent_id: uuid.UUID, new_name: str):
         """Rename the agent."""
         raise NotImplementedError
+        
+    def update_agent_preset(self, agent_id: uuid.UUID, new_name: str):
+        """Update the agent preset."""
+        raise NotImplementedError
 
     def delete_agent(self, agent_id: uuid.UUID):
         """Delete the agent."""
@@ -318,6 +322,12 @@ class RESTClient(AbstractClient):
     def rename_agent(self, agent_id: uuid.UUID, new_name: str):
         response = requests.patch(f"{self.base_url}/api/agents/{str(agent_id)}/rename", json={"agent_name": new_name}, headers=self.headers)
         assert response.status_code == 200, f"Failed to rename agent: {response.text}"
+        response_obj = GetAgentResponse(**response.json())
+        return self.get_agent_response_to_state(response_obj)
+
+    def update_agent_preset(self, agent_id: uuid.UUID, new_name: str):
+        response = requests.patch(f"{self.base_url}/api/agents/{str(agent_id)}/update_preset", json={"agent_preset": new_name}, headers=self.headers)
+        assert response.status_code == 200, f"Failed to update agent preset: {response.text}"
         response_obj = GetAgentResponse(**response.json())
         return self.get_agent_response_to_state(response_obj)
 

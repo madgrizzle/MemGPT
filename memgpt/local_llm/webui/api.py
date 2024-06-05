@@ -7,20 +7,25 @@ WEBUI_API_SUFFIX = "/v1/completions"
 
 
 def get_webui_completion(endpoint, auth_type, auth_key, prompt, context_window, grammar=None):
-    """Compatibility for the new OpenAI API: https://github.com/oobabooga/text-generation-webui/wiki/12-%E2%80%90-OpenAI-API#examples"""
+    """Compatibility for the new OpenAI API: https://github.com/oobabooga/text-generation-webui/wiki/12-%E2%80%90-OpenAI-API#examples/exit"""
     from memgpt.utils import printd
 
     prompt_tokens = count_tokens(prompt)
     if prompt_tokens > context_window:
         raise Exception(f"Request exceeds maximum context length ({prompt_tokens} > {context_window} tokens)")
-
+    print(f"prompt_tokens={prompt_tokens}")
     # Settings for the generation, includes the prompt + stop tokens, max length, etc
     settings = get_completions_settings()
     request = settings
     request["prompt"] = prompt
     request["truncation_length"] = context_window
-    request["max_tokens"] = int(context_window - prompt_tokens)
-    request["max_new_tokens"] = int(context_window - prompt_tokens)  # safety backup to "max_tokens", shouldn't matter
+    request["temperature"] = 0.7
+    if int(context_window - prompt_tokens) < 512:
+        request["max_new_tokens"] = int(context_window - prompt_tokens)  # safety backup to "max_tokens", shouldn't matter
+        request["max_tokens"] = int(context_window - prompt_tokens)
+    else:
+        request["max_new_tokens"] = 512
+        request["max_tokens"] = 512
 
     # Set grammar
     if grammar is not None:

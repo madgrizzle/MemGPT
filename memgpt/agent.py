@@ -103,6 +103,7 @@ def link_functions(function_schemas: list):
                 f"Found matching function '{f_name}' from agent.state.functions inside function library, but schemas are different.\n"
                 + "".join(schema_diff)
             )
+            print(f"{f_schema}")
 
             # NOTE to handle old configs, instead of erroring here let's just warn
             # raise ValueError(error_message)
@@ -111,12 +112,12 @@ def link_functions(function_schemas: list):
     return linked_function_set
 
 
-def initialize_memory(ai_notes: Union[str, None], human_notes: Union[str, None]):
+def initialize_memory(ai_notes: Union[str, None], human_notes: Union[str, None], agent_state: AgentState):
     if ai_notes is None:
         raise ValueError(ai_notes)
     if human_notes is None:
         raise ValueError(human_notes)
-    memory = InContextMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT)
+    memory = InContextMemory(human_char_limit=CORE_MEMORY_HUMAN_CHAR_LIMIT, persona_char_limit=CORE_MEMORY_PERSONA_CHAR_LIMIT, agent_state=agent_state)
     memory.edit_persona(ai_notes)
     memory.edit_human(human_notes)
     return memory
@@ -142,7 +143,7 @@ def construct_system_with_memory(
             memory.persona,
             "</persona>",
             f'<human characters="{len(memory.human)}/{memory.human_char_limit}">' if include_char_count else "<human>",
-            memory.human,
+            memory.human_to_string(),
             "</human>",
         ]
     )
@@ -266,7 +267,7 @@ class Agent(object):
             raise ValueError(f"'persona' not found in provided AgentState")
         if "human" not in self.agent_state.state:
             raise ValueError(f"'human' not found in provided AgentState")
-        self.memory = initialize_memory(ai_notes=self.agent_state.state["persona"], human_notes=self.agent_state.state["human"])
+        self.memory = initialize_memory(ai_notes=self.agent_state.state["persona"], human_notes=self.agent_state.state["human"], agent_state=self.agent_state)
 
         # Interface must implement:
         # - internal_monologue

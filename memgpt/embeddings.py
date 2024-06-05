@@ -152,6 +152,8 @@ def query_embedding(embedding_model, query_text: str):
     query_vec = np.pad(query_vec, (0, MAX_EMBEDDING_DIM - query_vec.shape[0]), mode="constant").tolist()
     return query_vec
 
+def get_l2_distance(embedding_model, embed_a, embed_b):
+    return np.linalg.norm(np.array(embed_a) - np.array(embed_b))
 
 def embedding_model(config: EmbeddingConfig, user_id: Optional[uuid.UUID] = None):
     """Return LlamaIndex embedding model to use for embeddings"""

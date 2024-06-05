@@ -83,6 +83,11 @@ class Server(object):
         raise NotImplementedError
 
     @abstractmethod
+    def update_agent_preset(self, user_id: uuid.UUID, agent_id: uuid.UUID, new_preset_contents: str) -> dict:
+        """Update the agents preset, return the new state"""
+        raise NotImplementedError
+        
+    @abstractmethod
     def create_agent(
         self,
         user_id: uuid.UUID,
@@ -1213,7 +1218,35 @@ class SyncServer(LockingServer):
             "new_core_memory": new_core_memory,
             "modified": modified,
         }
+    
+    def update_agent_preset(self, user_id: uuid.UUID, agent_id: uuid.UUID, new_agent_preset: str) -> AgentState:
+        """Update the name of the agent in the database"""
+        if self.ms.get_user(user_id=user_id) is None:
+            raise ValueError(f"User user_id={user_id} does not exist")
+        if self.ms.get_agent(agent_id=agent_id, user_id=user_id) is None:
+            raise ValueError(f"Agent agent_id={agent_id} does not exist")
 
+        # Get the agent object (loaded in memory)
+        memgpt_agent = self._get_or_load_agent(user_id=user_id, agent_id=agent_id)
+    
+        logger.info(f"Getting current_preset")
+        current_preset = memgpt_agent.agent_state.state["system"]
+        logger.info(f"Current preset gotten")        
+        if current_preset == new_agent_preset:
+            raise ValueError(f"New preset (...) is the same as the current preset")
+
+        try:
+            logger.info(f"Updating current preset")        
+            memgpt_agent.agent_state.state["system"] = new_agent_preset
+            logger.info(f"Current preset updated")                    
+            self.ms.update_agent(agent=memgpt_agent.agent_state)
+            logger.info(f"Updated agent")                                
+        except Exception as e:
+            logger.exception(f"Failed to update agent preset with:\n{str(e)}")
+            raise ValueError(f"Failed to update agent preset in database")
+
+        return memgpt_agent.agent_state
+        
     def rename_agent(self, user_id: uuid.UUID, agent_id: uuid.UUID, new_agent_name: str) -> AgentState:
         """Update the name of the agent in the database"""
         if self.ms.get_user(user_id=user_id) is None:
