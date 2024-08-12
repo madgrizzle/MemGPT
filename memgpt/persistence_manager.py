@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List
 
 from memgpt.data_types import AgentState, Message
-from memgpt.memory import BaseRecallMemory, EmbeddingArchivalMemory
+from memgpt.memory import BaseRecallMemory, EmbeddingArchivalMemory, SharedMemory
 from memgpt.utils import printd
 
 
@@ -42,6 +42,7 @@ class LocalStateManager(PersistenceManager):
 
     recall_memory_cls = BaseRecallMemory
     archival_memory_cls = EmbeddingArchivalMemory
+    shared_memory_cls = SharedMemory
 
     def __init__(self, agent_state: AgentState):
         # Memory held in-state useful for debugging stateful versions
@@ -50,6 +51,7 @@ class LocalStateManager(PersistenceManager):
         # self.all_messages = [] # all messages seen in current session (needed if lazily synchronizing state with DB)
         self.archival_memory = EmbeddingArchivalMemory(agent_state)
         self.recall_memory = BaseRecallMemory(agent_state)
+        self.shared_memory = SharedMemory(agent_state)
         # self.agent_state = agent_state
 
     def save(self):

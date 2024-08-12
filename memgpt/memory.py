@@ -18,6 +18,32 @@ from memgpt.utils import (
     validate_date_format,
 )
 
+class ArchivalMemory(ABC):
+    @abstractmethod
+    def insert(self, memory_string: str):
+        """Insert new archival memory
+
+        :param memory_string: Memory string to insert
+        :type memory_string: str
+        """
+
+    @abstractmethod
+    def search(self, query_string, count=None, start=None) -> Tuple[List[str], int]:
+        """Search archival memory
+
+        :param query_string: Query string
+        :type query_string: str
+        :param count: Number of results to return (None for all)
+        :type count: Optional[int]
+        :param start: Offset to start returning results from (None if 0)
+        :type start: Optional[int]
+
+        :return: Tuple of (list of results, total number of results)
+        """
+
+    @abstractmethod
+    def __repr__(self) -> str:
+        pass
 
 class MemoryModule(BaseModel):
     """Base class for memory modules"""
@@ -55,89 +81,17 @@ class MemoryModule(BaseModel):
 
     def __len__(self):
         return len(str(self))
-
+        
+    def get_value(self):
+        return "\n".join(self.value)
+        
     def __str__(self) -> str:
         if isinstance(self.value, list):
-            return ",".join(self.value)
+            return "\n".join(self.value)
         elif isinstance(self.value, str):
             return self.value
         else:
             return ""
-
-
-class BaseMemory:
-
-    def __init__(self):
-        self.memory = {}
-
-    @classmethod
-    def load(cls, state: dict):
-        """Load memory from dictionary object"""
-        obj = cls()
-        for key, value in state.items():
-            obj.memory[key] = MemoryModule(**value)
-        return obj
-
-    def __str__(self) -> str:
-        """Representation of the memory in-context"""
-        section_strs = []
-        for section, module in self.memory.items():
-            section_strs.append(f'<{section} characters="{len(module)}/{module.limit}">\n{module.value}\n</{section}>')
-        return "\n".join(section_strs)
-
-    def to_dict(self):
-        """Convert to dictionary representation"""
-        return {key: value.dict() for key, value in self.memory.items()}
-
-
-class ChatMemory(BaseMemory):
-
-    def __init__(self, persona: str, human: str, limit: int = 2000):
-        self.memory = {
-            "persona": MemoryModule(name="persona", value=persona, limit=limit),
-            "human": MemoryModule(name="human", value=human, limit=limit),
-        }
-
-    def core_memory_append(self, name: str, content: str) -> Optional[str]:
-        """
-        Append to the contents of core memory.
-
-        Args:
-            name (str): Section of the memory to be edited (persona or human).
-            content (str): Content to write to the memory. All unicode (including emojis) are supported.
-
-        Returns:
-            Optional[str]: None is always returned as this function does not produce a response.
-        """
-        self.memory[name].value += "\n" + content
-        return None
-
-    def core_memory_replace(self, name: str, old_content: str, new_content: str) -> Optional[str]:
-        """
-        Replace the contents of core memory. To delete memories, use an empty string for new_content.
-
-        Args:
-            name (str): Section of the memory to be edited (persona or human).
-            old_content (str): String to replace. Must be an exact match.
-            new_content (str): Content to write to the memory. All unicode (including emojis) are supported.
-
-        Returns:
-            Optional[str]: None is always returned as this function does not produce a response.
-        """
-        self.memory[name].value = self.memory[name].value.replace(old_content, new_content)
-        return None
-
-
-def get_memory_functions(cls: BaseMemory) -> List[callable]:
-    """Get memory functions for a memory class"""
-    functions = {}
-    for func_name in dir(cls):
-        if func_name.startswith("_") or func_name in ["load", "to_dict"]:  # skip base functions
-            continue
-        func = getattr(cls, func_name)
-        if callable(func):
-            functions[func_name] = func
-    return functions
 
 
 # class CoreMemory(object):
@@ -270,34 +224,6 @@ def summarize_messages(
     printd(f"summarize_messages gpt reply: {response.choices[0]}")
     reply = response.choices[0].message.content
     return reply
-
-
-class ArchivalMemory(ABC):
-    @abstractmethod
-    def insert(self, memory_string: str):
-        """Insert new archival memory
-
-        :param memory_string: Memory string to insert
-        :type memory_string: str
-        """
-
-    @abstractmethod
-    def search(self, query_string, count=None, start=None) -> Tuple[List[str], int]:
-        """Search archival memory
-
-        :param query_string: Query string
-        :type query_string: str
-        :param count: Number of results to return (None for all)
-        :type count: Optional[int]
-        :param start: Offset to start returning results from (None if 0)
-        :type start: Optional[int]
-
-        :return: Tuple of (list of results, total number of results)
-        """
-
-    @abstractmethod
-    def __repr__(self) -> str:
-        pass
 
 
 class RecallMemory(ABC):
@@ -487,6 +413,8 @@ class BaseRecallMemory(RecallMemory):
         return self.storage.size()
 
 
+
+
 class EmbeddingArchivalMemory(ArchivalMemory):
     """Archival memory with embedding based search"""
 
@@ -525,7 +453,7 @@ class EmbeddingArchivalMemory(ArchivalMemory):
         """Save the index to disk"""
         self.storage.save()
 
-    def insert(self, memory_string, return_ids=False) -> Union[bool, List[uuid.UUID]]:
+    def insert(self, memory_string, subsection=None, return_ids=False) -> Union[bool, List[uuid.UUID]]:
         """Embed and save memory string"""
 
         if not isinstance(memory_string, str):
@@ -596,3 +524,269 @@ class EmbeddingArchivalMemory(ArchivalMemory):
 
     def __len__(self):
         return self.storage.size()
+        
+        
+class SharedMemory(ArchivalMemory):
+    """Archival memory with embedding based search"""
+
+    def __init__(self, agent_state: AgentState, top_k: Optional[int] = 100):
+        """Init function for archival memory
+
+        :param archival_memory_database: name of dataset to pre-fill archival with
+        :type archival_memory_database: str
+        """
+        from memgpt.agent_store.storage import StorageConnector
+
+        self.top_k = top_k
+        self.agent_state = agent_state
+
+        # create embedding model
+        self.embed_model = embedding_model(agent_state.embedding_config)
+        self.embedding_chunk_size = agent_state.embedding_config.embedding_chunk_size
+        assert self.embedding_chunk_size, f"Must set {agent_state.embedding_config.embedding_chunk_size}"
+
+        # create storage backend
+        self.storage = StorageConnector.get_archival_storage_connector(user_id=agent_state.user_id, agent_id=agent_state.id)
+        # TODO: have some mechanism for cleanup otherwise will lead to OOM
+        self.cache = {}
+
+    def create_passage(self, text, embedding, subsection):
+        return Passage(
+            user_id=self.agent_state.user_id,
+            agent_id=self.agent_state.id,
+            text=text,
+            embedding=embedding,
+            embedding_dim=self.agent_state.embedding_config.embedding_dim,
+            embedding_model=self.agent_state.embedding_config.embedding_model,
+            data_source="@"+subsection,
+        )
+
+    def save(self):
+        """Save the index to disk"""
+        self.storage.save()
+
+    def insert(self, memory_string, subsection=None, return_ids=False) -> Union[bool, List[uuid.UUID]]:
+        """Embed and save memory string"""
+
+        if not isinstance(memory_string, str):
+            raise TypeError("memory must be a string")
+
+        try:
+            passages = []
+
+            # breakup string into passages
+            for text in parse_and_chunk_text(memory_string, self.embedding_chunk_size):
+                embedding = self.embed_model.get_text_embedding(text)
+                # fixing weird bug where type returned isn't a list, but instead is an object
+                # eg: embedding={'object': 'list', 'data': [{'object': 'embedding', 'embedding': [-0.0071973633, -0.07893023,
+                if isinstance(embedding, dict):
+                    try:
+                        embedding = embedding["data"][0]["embedding"]
+                    except (KeyError, IndexError):
+                        # TODO as a fallback, see if we can find any lists in the payload
+                        raise TypeError(
+                            f"Got back an unexpected payload from text embedding function, type={type(embedding)}, value={embedding}"
+                        )
+                passages.append(self.create_passage(text, embedding, subsection=subsection))
+
+            # grab the return IDs before the list gets modified
+            ids = [str(p.id) for p in passages]
+
+            # insert passages
+            self.storage.insert_many(passages)
+
+            if return_ids:
+                return ids
+            else:
+                return True
+
+        except Exception as e:
+            print("Archival insert error", e)
+            raise e
+
+    def search(self, query_string, count=None, start=None):
+        """Search query string"""
+        if not isinstance(query_string, str):
+            return TypeError("query must be a string")
+
+        try:
+            if query_string not in self.cache:
+                # self.cache[query_string] = self.retriever.retrieve(query_string)
+                query_vec = query_embedding(self.embed_model, query_string)
+                self.cache[query_string] = self.storage.query(query_string, query_vec, top_k=self.top_k)
+
+            start = int(start if start else 0)
+            count = int(count if count else self.top_k)
+            end = min(count + start, len(self.cache[query_string]))
+
+            results = self.cache[query_string][start:end]
+            results = [{"timestamp": get_local_time(), "content": node.text} for node in results]
+            return results, len(results)
+        except Exception as e:
+            print("Archival search error", e)
+            raise e
+
+    def __repr__(self) -> str:
+        limit = 10
+        passages = []
+        for passage in list(self.storage.get_all(limit=limit)):  # TODO: only get first 10
+            passages.append(str(passage.text))
+        memory_str = "\n".join(passages)
+        return f"\n### ARCHIVAL MEMORY ###" + f"\n{memory_str}" + f"\nSize: {self.storage.size()}"
+
+    def __len__(self):
+        return self.storage.size()
+        
+    def get_relationships(self) -> str:
+        """Search query string"""
+        try:
+            results = self.storage.query_relationships()
+            return results
+        except Exception as e:
+            print("Archival search error", e)
+            raise e
+            
+class BaseMemory:
+
+    def __init__(self):
+        self.memory = {}
+        self.shared_memory = None
+        
+
+    @classmethod
+    def load(cls, state: dict):
+        """Load memory from dictionary object"""
+        obj = cls()
+        for key, value in state.items():
+            obj.memory[key] = MemoryModule(**value)
+        return obj
+
+    def __str__(self) -> str:
+        """Representation of the memory in-context"""
+        if "human_public" in self.memory:
+            section_strs = []
+            section_strs.append(f'<persona> characters="{len(self.memory["persona"])}/{self.memory["persona"].limit}">\n{self.memory["persona"].value}\n</persona>')        
+            section_strs.append(f'<human> characters="{len(self.memory["human_public"])+len(self.memory["human_private"])}/{self.memory["human_public"].limit}">\n')
+            section_strs.append(f'Public Information:\n{self.memory["human_public"].get_value()}\n')
+            section_strs.append(f'Private Information:\n{self.memory["human_private"].get_value()}\n')
+            if self.shared_memory is not None:
+                section_strs.append(f'Relationship Information:\n{self.shared_memory.get_relationships()}\n')
+            section_strs.append(f'</human>')        
+        else:
+            for section, module in self.memory.items():
+                section_strs.append(f'<{section} characters="{len(module)}/{module.limit}">\n{module.value}\n</{section}>')
+        return "\n".join(section_strs)
+
+    def _set_shared_memory(self, shared_memory: SharedMemory):
+        self.shared_memory = shared_memory
+
+    def to_dict(self):
+        """Convert to dictionary representation"""
+        return {key: value.dict() for key, value in self.memory.items()}
+
+class ChatMemory(BaseMemory):
+
+    def __init__(self, persona: str, human: str, limit: int = 2000):
+        self.memory = {
+            "persona": MemoryModule(name="persona", value=persona, limit=limit),
+            "human": MemoryModule(name="human", value=human, limit=limit),
+        }
+        print("-------------------------------------------------------------")
+        
+    def core_memory_append(self, name: str, content: str) -> Optional[str]:
+        """
+        Append to the contents of core memory.
+
+        Args:
+            name (str): Section of the memory to be edited (persona or human).
+            content (str): Content to write to the memory. All unicode (including emojis) are supported.
+
+        Returns:
+            Optional[str]: None is always returned as this function does not produce a response.
+        """
+        self.memory[name].value += "\n" + content
+        return None
+
+    def core_memory_replace(self, name: str, old_content: str, new_content: str) -> Optional[str]:
+        """
+        Replace the contents of core memory. To delete memories, use an empty string for new_content.
+
+        Args:
+            name (str): Section of the memory to be edited (persona or human).
+            old_content (str): String to replace. Must be an exact match.
+            new_content (str): Content to write to the memory. All unicode (including emojis) are supported.
+
+        Returns:
+            Optional[str]: None is always returned as this function does not produce a response.
+        """
+        self.memory[name].value = self.memory[name].value.replace(old_content, new_content)
+        return None
+
+
+def get_memory_functions(cls: BaseMemory) -> List[callable]:
+    """Get memory functions for a memory class"""
+    functions = {}
+    for func_name in dir(cls):
+        if func_name.startswith("_") or func_name in ["load", "to_dict"]:  # skip base functions
+            continue
+        func = getattr(cls, func_name)
+        if callable(func):
+            functions[func_name] = func
+    return functions
+            
+class CrossAgentChatMemory(BaseMemory):
+
+    def __init__(self, persona: str, human: str, limit: int = 2000):
+        self.memory = {
+            "persona": MemoryModule(description="persona", value=persona, limit=limit),
+            "human_public": MemoryModule(description="human public memories", value=[], limit=limit),
+            "human_private": MemoryModule(description="human private memories", value=[], limit=limit),            
+        }
+        print("-------------created crossagentchatmemory---------------")
+   
+    def core_memory_append(self, name: str, content: str, subsection: Optional[str] = "None") -> Optional[str]:
+        """
+        Append to the contents of core memory.
+
+        Args:
+            name (str): Section of the memory to be edited (persona or human).
+            content (str): Content to write to the memory. All unicode (including emojis) are supported.
+            subsection (Optional[str]): Name of sub-section to store memory.  Must be "public", "private", or "relationship". Defaults to "private".
+            
+        Returns:
+            Optional[str]: None is always returned as this function does not produce a response.
+        """
+        if subsection is None or subsection=="":
+            subsection = "private"
+        subsection = subsection.lower()
+        if subsection == "relationship" or subsection == "public":
+            print("----saving to shared_memory----")
+            self.persistence_manager.shared_memory.insert(content, subsection = subsection)
+        if subsection != "relationship":
+            if name == "persona":
+                self.memory[name].value += "\n" + content
+            else:
+                self.memory["human_"+subsection].value.append(content)
+        else:
+            self.rebuild_memory()
+        return None
+
+    def core_memory_replace(self, name: str, old_content: str, new_content: str, subsection: Optional[str] = "None") -> Optional[str]:
+        """
+        Replace the contents of core memory. To delete memories, use an empty string for new_content.
+
+        Args:
+            name (str): Section of the memory to be edited (persona or human).
+            old_content (str): String to replace. Must be an exact match.
+            new_content (str): Content to write to the memory. All unicode (including emojis) are supported.
+            subsection (Optional[str]): Name of sub-section to store memory.  Must be "public", "private", or "relationship". Defaults to "private".
+            
+        Returns:
+            Optional[str]: None is always returned as this function does not produce a response.
+        """
+        if subsection is None or subsection=="":
+            subsection = "private"
+        self.memory[name].replace_memory(old_content, new_content, subsection)
+        #self.rebuild_memory()
+        return None
+            

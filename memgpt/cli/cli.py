@@ -21,7 +21,7 @@ from memgpt.constants import CLI_WARNING_PREFIX, MEMGPT_DIR
 from memgpt.credentials import MemGPTCredentials
 from memgpt.data_types import EmbeddingConfig, LLMConfig, User
 from memgpt.log import get_logger
-from memgpt.memory import ChatMemory
+from memgpt.memory import ChatMemory, CrossAgentChatMemory
 from memgpt.metadata import MetadataStore
 from memgpt.migrate import migrate_all_agents, migrate_all_sources
 from memgpt.models.pydantic_models import OptionState
@@ -665,7 +665,11 @@ def run(
             if persona_obj is None:
                 typer.secho("Couldn't find persona {persona} in database, please run `memgpt add persona`", fg=typer.colors.RED)
 
-            memory = ChatMemory(human=human_obj.text, persona=persona_obj.text, limit=core_memory_limit)
+            if False:
+                memory = ChatMemory(human=human_obj.text, persona=persona_obj.text, limit=core_memory_limit)
+            else:
+                memory = CrossAgentChatMemory(human=human_obj.text, persona=persona_obj.text, limit=core_memory_limit)
+
             metadata = {"human": human_obj.name, "persona": persona_obj.name}
 
             typer.secho(f"->  🤖 Using persona profile: '{persona_obj.name}'", fg=typer.colors.WHITE)
@@ -711,6 +715,42 @@ def run(
         inner_thoughts_in_kwargs=no_content,
     )  # TODO: add back no_verify
 
+
+def delete_all_agents(user_id: Annotated[Optional[str], typer.Option(help="User ID to associate with the agent.")] = None,):
+    config = MemGPTConfig.load()
+    ms = MetadataStore(config)
+    agents = ms.list_agents(user_id=user.id)
+    agents = [a.name for a in agents]
+
+    if user_id is None:
+        user = create_default_user_or_exit(config, ms)
+    else:
+        user = ms.get_user(user_id=uuid.UUID(user_id))
+
+    for agent_name in agents:
+        try:
+            agent = ms.get_agent(agent_name=agent_name, user_id=user.id)
+        except Exception as e:
+            typer.secho(f"Failed to get agent {agent_name}\n{e}", fg=typer.colors.RED)
+            sys.exit(1)
+
+        if agent is None:
+            typer.secho(f"Couldn't find agent named '{agent_name}' to delete", fg=typer.colors.RED)
+            sys.exit(1)
+
+        confirm = questionary.confirm(f"Are you sure you want to delete agent '{agent_name}' (id={agent.id})?", default=False).ask()
+        if confirm is None:
+            raise KeyboardInterrupt
+        if not confirm:
+            typer.secho(f"Cancelled agent deletion '{agent_name}' (id={agent.id})", fg=typer.colors.GREEN)
+            return
+
+        try:
+            ms.delete_agent(agent_id=agent.id)
+            typer.secho(f"🕊️ Successfully deleted agent '{agent_name}' (id={agent.id})", fg=typer.colors.GREEN)
+        except Exception:
+            typer.secho(f"Failed to delete agent '{agent_name}' (id={agent.id})", fg=typer.colors.RED)
+            sys.exit(1)
 
 def delete_agent(
     agent_name: Annotated[str, typer.Option(help="Specify agent to delete")],

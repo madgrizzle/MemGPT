@@ -11,7 +11,7 @@ from memgpt.data_sources.connectors import DataConnector
 from memgpt.data_types import AgentState, EmbeddingConfig, LLMConfig, Preset, Source
 from memgpt.functions.functions import parse_source_code
 from memgpt.functions.schema_generator import generate_schema
-from memgpt.memory import BaseMemory, ChatMemory, get_memory_functions
+from memgpt.memory import BaseMemory, ChatMemory, CrossAgentChatMemory, get_memory_functions
 from memgpt.models.pydantic_models import (
     HumanModel,
     JobModel,
@@ -259,7 +259,7 @@ class RESTClient(AbstractClient):
         embedding_config: Optional[EmbeddingConfig] = None,
         llm_config: Optional[LLMConfig] = None,
         # memory
-        memory: BaseMemory = ChatMemory(human=get_human_text(DEFAULT_HUMAN), persona=get_human_text(DEFAULT_PERSONA)),
+        memory: BaseMemory = CrossAgentChatMemory(human=get_human_text(DEFAULT_HUMAN), persona=get_human_text(DEFAULT_PERSONA)),
         # system prompt (can be templated)
         system_prompt: Optional[str] = None,
         # tools
@@ -729,7 +729,7 @@ class LocalClient(AbstractClient):
         embedding_config: Optional[EmbeddingConfig] = None,
         llm_config: Optional[LLMConfig] = None,
         # memory
-        memory: BaseMemory = ChatMemory(human=get_human_text(DEFAULT_HUMAN), persona=get_human_text(DEFAULT_PERSONA)),
+        memory: BaseMemory = CrossAgentChatMemory(human=get_human_text(DEFAULT_HUMAN), persona=get_human_text(DEFAULT_PERSONA)),
         # system prompt (can be templated)
         system_prompt: Optional[str] = None,
         # tools
@@ -776,6 +776,9 @@ class LocalClient(AbstractClient):
 
     def delete_agent(self, agent_id: uuid.UUID):
         self.server.delete_agent(user_id=self.user_id, agent_id=agent_id)
+
+    def delete_all_agents(self):
+        self.server.delete_all_agents(user_id=self.user_id)
 
     def get_agent_config(self, agent_id: uuid.UUID) -> AgentState:
         self.interface.clear()

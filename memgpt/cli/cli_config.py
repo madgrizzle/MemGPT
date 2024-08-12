@@ -1214,6 +1214,9 @@ def delete(option: str, name: str):
             agent = client.get_agent(agent_name=name)
             assert agent is not None, f"Agent {name} does not exist"
             client.delete_agent(agent_id=agent.id)
+        elif option == "agents":
+            assert name == "all", "Must specify 'all' as name"
+            client.delete_all_agents()            
         elif option == "human":
             human = client.get_human(name=name)
             assert human is not None, f"Human {name} does not exist"

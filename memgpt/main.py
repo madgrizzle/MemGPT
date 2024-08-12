@@ -17,6 +17,7 @@ from memgpt.agent_store.storage import StorageConnector, TableType
 from memgpt.benchmark.benchmark import bench
 from memgpt.cli.cli import (
     delete_agent,
+    delete_all_agents,
     migrate,
     open_folder,
     quickstart,
@@ -59,6 +60,7 @@ app.command(name="migrate")(migrate)
 app.command(name="benchmark")(bench)
 # delete agents
 app.command(name="delete-agent")(delete_agent)
+app.command(name="delete-all-agents")(delete_all_agents)
 
 
 def clear_line(console, strip_ui=False):

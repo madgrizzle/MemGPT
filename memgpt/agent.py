@@ -240,6 +240,9 @@ class Agent(object):
         # Create the persistence manager object based on the AgentState info
         self.persistence_manager = LocalStateManager(agent_state=self.agent_state)
 
+        # Give BaseMemory access to shared memory
+        self.memory._set_shared_memory(self.persistence_manager.shared_memory)
+        
         # State needed for heartbeat pausing
         self.pause_heartbeats_start = None
         self.pause_heartbeats_minutes = 0

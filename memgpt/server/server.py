@@ -816,6 +816,26 @@ class SyncServer(LockingServer):
         agent = self.ms.get_agent(agent_id=agent_id, user_id=user_id)
         if agent is not None:
             self.ms.delete_agent(agent_id=agent_id)
+    
+    def delete_all_agents(
+        self,
+        user_id: uuid.UUID,
+    ):
+        # TODO: delete agent data
+
+        agents = self.ms.list_agents(user_id)
+        agents = [a.name for a in agents]
+
+        if self.ms.get_user(user_id=user_id) is None:
+            raise ValueError(f"User user_id={user_id} does not exist")
+        for agent_name in agents:
+            agent = self.ms.get_agent(agent_name=agent_name, user_id=user_id)
+
+            # TODO: Make sure the user owns the agent
+            agent = self.ms.get_agent(agent_id=agent.id, user_id=user_id)
+            if agent is not None:
+                self.ms.delete_agent(agent_id=agent.id)
+
 
     def delete_preset(self, user_id: uuid.UUID, preset_id: uuid.UUID) -> Preset:
         if self.ms.get_user(user_id=user_id) is None:
@@ -1357,6 +1377,7 @@ class SyncServer(LockingServer):
         except Exception as e:
             logger.exception(f"Failed to delete agent {agent_id} via ID with:\n{str(e)}")
             raise ValueError(f"Failed to delete agent {agent_id} in database")
+
 
     def authenticate_user(self) -> uuid.UUID:
         # TODO: Implement actual authentication to enable multi user setup

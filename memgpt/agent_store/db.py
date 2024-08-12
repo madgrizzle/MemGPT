@@ -546,6 +546,18 @@ class PostgresStorageConnector(SQLStorageConnector):
                 query = query.limit(limit)
             results = query.all()
         return [result.to_record() for result in results]
+        
+    def query_relationships(self) -> str:
+        with self.session_maker() as session:
+            query = (
+                session.query(self.db_model)
+                .filter(self.db_model.data_source == "@relationship")
+            )
+            results = query.all()
+            relationships = ""
+            for result in results:
+                relationships += result.to_record().text + "\n"
+            return relationships        
 
 
 class SQLLiteStorageConnector(SQLStorageConnector):
