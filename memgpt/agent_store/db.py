@@ -558,7 +558,23 @@ class PostgresStorageConnector(SQLStorageConnector):
             for result in results:
                 relationships += result.to_record().text + "\n"
             return relationships        
-
+    
+    def replace_memory(self, old_content, new_content, subsection):
+        with self.session_maker() as session:
+            query = (
+                session.query(self.db_model)
+                .filter(self.db_model.data_source == "@"+subsection)
+                .filter(func.lower(self.db_model.text).contains(func.lower(query)))
+                .filter(self.db_model.role != "system")
+                .filter(self.db_model.role != "tool")
+            )
+            if limit:
+                query = query.limit(limit)
+            result = query.first()
+            if result is not None:
+                result = result.to_record()
+                result.
+                self.updaterecord: Record):            
 
 class SQLLiteStorageConnector(SQLStorageConnector):
     def __init__(self, table_type: str, config: MemGPTConfig, user_id, agent_id=None):

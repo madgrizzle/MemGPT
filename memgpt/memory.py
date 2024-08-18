@@ -646,13 +646,21 @@ class SharedMemory(ArchivalMemory):
             print("Archival search error", e)
             raise e
             
+    def replace_memory(self, old_content, new_content, subsection ):
+        try: 
+            self.storage.replace_memory(old_content, new_content, subsection)
+            return None
+        except Exception as e:
+            print("Replace memory error", e)
+            raise e
+
+            
 class BaseMemory:
 
     def __init__(self):
         self.memory = {}
         self.shared_memory = None
         
-
     @classmethod
     def load(cls, state: dict):
         """Load memory from dictionary object"""
@@ -667,10 +675,10 @@ class BaseMemory:
             section_strs = []
             section_strs.append(f'<persona> characters="{len(self.memory["persona"])}/{self.memory["persona"].limit}">\n{self.memory["persona"].value}\n</persona>')        
             section_strs.append(f'<human> characters="{len(self.memory["human_public"])+len(self.memory["human_private"])}/{self.memory["human_public"].limit}">\n')
-            section_strs.append(f'Public Information:\n{self.memory["human_public"].get_value()}\n')
-            section_strs.append(f'Private Information:\n{self.memory["human_private"].get_value()}\n')
+            section_strs.append(f'<public_information>\n{self.memory["human_public"].get_value()}\n</public_information>')
+            section_strs.append(f'<private_information>\n{self.memory["human_private"].get_value()}\n</private_information>')
             if self.shared_memory is not None:
-                section_strs.append(f'Relationship Information:\n{self.shared_memory.get_relationships()}\n')
+                section_strs.append(f'<relationship_information>\n{self.shared_memory.get_relationships()}\n</relationship_information>')
             section_strs.append(f'</human>')        
         else:
             for section, module in self.memory.items():
@@ -756,9 +764,12 @@ class CrossAgentChatMemory(BaseMemory):
         Returns:
             Optional[str]: None is always returned as this function does not produce a response.
         """
-        if subsection is None or subsection=="":
+        if subsection is None or subsection=="" or "private" in subsection:
             subsection = "private"
-        subsection = subsection.lower()
+        elif "public" in subsection:
+            subsection = "public"
+        elif "relationship" in subsection:
+            subsection = "relationship"
         if subsection == "relationship" or subsection == "public":
             print("----saving to shared_memory----")
             self.persistence_manager.shared_memory.insert(content, subsection = subsection)
@@ -784,9 +795,20 @@ class CrossAgentChatMemory(BaseMemory):
         Returns:
             Optional[str]: None is always returned as this function does not produce a response.
         """
-        if subsection is None or subsection=="":
+        if subsection is None or subsection=="" or "private" in subsection:
             subsection = "private"
-        self.memory[name].replace_memory(old_content, new_content, subsection)
+        elif "public" in subsection:
+            subsection = "public"
+        elif "relationship" in subsection:
+            subsection = "relationship"
+        if subsection == "relationship" or subsection == "public":
+            print("----saving to shared_memory----")
+            self.persistence_manager.shared_memory.replace_memory(content, subsection = subsection)
+        if subsection != "relationship":
+            if name == "persona":
+                self.memory[name].value = self.memory[name].value.replace(old_content, new_content)
+            else:
+                self.memory["human_"+subsection].replace_memory(old_content, new_content, subsection)
         #self.rebuild_memory()
         return None
             

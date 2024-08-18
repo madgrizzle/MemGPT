@@ -242,7 +242,7 @@ class Agent(object):
 
         # Give BaseMemory access to shared memory
         self.memory._set_shared_memory(self.persistence_manager.shared_memory)
-        
+       
         # State needed for heartbeat pausing
         self.pause_heartbeats_start = None
         self.pause_heartbeats_minutes = 0
